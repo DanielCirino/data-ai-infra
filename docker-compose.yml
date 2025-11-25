@@ -97,6 +97,7 @@ services:
       retries: 3
     networks:
       - docker_network
+    restart: always # Added restart policy
 
   postgres-server:
     image: postgis/postgis:15-3.4
@@ -116,6 +117,7 @@ services:
       - ./docker/postgresql/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/01-create-db.sh
     networks:
       - docker_network
+    restart: always # Added restart policy
 
   mongodb-server:
     image: mongo:6.0
@@ -200,7 +202,7 @@ services:
     container_name: airflow-web-app
     hostname: airflow-web-app
     command: webserver
-    restart: always
+    # restart: always # Removed restart policy
     ports:
       - "8081:8080"
     healthcheck:
@@ -214,7 +216,7 @@ services:
     container_name: airflow-scheduler-app
     hostname: airflow-scheduler-app
     command: scheduler
-    restart: on-failure
+    # restart: on-failure # Removed restart policy
     ports:
       - "8793:8793"
 
@@ -304,22 +306,37 @@ services:
     image: ollama/ollama:0.1.33
     container_name: ollama-server
     hostname: ollama-server
-    restart: always
+    # restart: always # Removed restart policy
     ports:
       - "11434:11434"
     volumes:
       - vol-ollama:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [gpu]
     env_file:
       - ./.env
     networks:
       - docker_network
+
+  open-webui-app:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui-app
+    hostname: open-webui-app
+    ports:
+      - "8080:8080" # Host:Container
+    volumes:
+      - vol-open-webui:/app/backend/data
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - ollama-server
 
   mlflow-server:
     image: python:3.9-slim
@@ -469,6 +486,7 @@ services:
       - ./.env
     networks:
       - docker_network
+    restart: always # Added restart policy
 
   metabase-app:
     image: metabase/metabase:v0.45.3

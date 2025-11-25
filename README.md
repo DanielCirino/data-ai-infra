@@ -1,4 +1,4 @@
-# DevRox Local Infrastructure
+# Data & AI Local Infrastructure
 
 Este repositório contém uma plataforma de desenvolvimento local completa e robusta, provisionada com Docker Compose. O objetivo é fornecer uma base de infraestrutura pronta para uso para projetos de desenvolvimento de software, engenharia de dados e inteligência artificial, sem custos de nuvem.
 
@@ -23,7 +23,9 @@ Abaixo está a lista de todos os serviços disponíveis, agrupados por capacidad
 | | Apache Spark Master | [http://localhost:9090](http://localhost:9090) | (N/A) |
 | | Apache Spark Worker A | [http://localhost:9093](http://localhost:9093) | (N/A) |
 | | Apache Spark Worker B | [http://localhost:9092](http://localhost:9092) | (N/A) |
-| **AI & ML** | MLflow | [http://localhost:5000](http://localhost:5000) | (N/A) |
+| **AI & ML** | Ollama (LLM Server) | [http://localhost:11434](http://localhost:11434) | (N/A) |
+| | Open WebUI | [http://localhost:8080](http://localhost:8080) | (setup no primeiro acesso) |
+| | MLflow | [http://localhost:5000](http://localhost:5000) | (N/A) |
 | | JupyterLab | [http://localhost:8888](http://localhost:8888) | (token no console) |
 | | ChromaDB (Vector DB) | [http://localhost:8000/api/v1](http://localhost:8000/api/v1) | (N/A) |
 | **Observability** | Grafana | [http://localhost:3000](http://localhost:3000) | `admin` / `admin` |
@@ -45,7 +47,7 @@ Abaixo está a lista de todos os serviços disponíveis, agrupados por capacidad
 
 1.  **Clone o Repositório:**
     ```bash
-    git clone [URL_DO_SEU_REPOSITORIO]
+    git clone https://github.com/DanielCirino/data-ai-infra.git
     cd devrox-infra
     ```
 
@@ -90,3 +92,13 @@ Abaixo está a lista de todos os serviços disponíveis, agrupados por capacidad
     - **`*.yml` ou `*.conf`**: Arquivos de configuração adicionais, se necessários.
     - **`Dockerfile`**: Se o serviço requer uma imagem customizada, ele estará aqui.
 - **`data/`**: Diretórios mapeados como volumes para persistir dados ou fornecer arquivos aos serviços (ex: `notebooks/` para o Jupyter, `dags/` para o Airflow). Este diretório é criado na primeira execução ou pode ser criado manualmente.
+
+## Políticas de Reinício (Restart Policies)
+
+Para otimizar o uso de recursos e o tempo de inicialização em um ambiente de desenvolvimento local, apenas os serviços essenciais estão configurados para reiniciar automaticamente com o Docker:
+
+*   **`minio-server`**: `restart: always`
+*   **`postgres-server`**: `restart: always`
+*   **`portainer-app`**: `restart: always`
+
+Todos os outros serviços não possuem uma política de reinício definida (`no-restart`), o que significa que eles precisarão ser iniciados manualmente após um `docker-compose down` ou uma reinicialização do sistema, a menos que você os inicie explicitamente.
