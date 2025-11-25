@@ -1,0 +1,515 @@
+volumes:
+  vol-airflow:
+  vol-postgres:
+  vol-mongodb:
+  vol-metabase:
+  vol-minio:
+  vol-spark-apps:
+  vol-spark-data:
+  vol-spark-logs:
+  vol-portainer:
+  vol-prometheus:
+  vol-loki:
+  vol-tempo:
+  vol-grafana:
+  vol-redis:
+  vol-smtp:
+  vol-rabbitmq:
+  vol-clickhouse:
+  vol-neo4j:
+  vol-chroma:
+  vol-ollama:
+  vol-open-webui:
+
+networks:
+  docker_network:
+
+#================================================================================
+# X-DEFINITIONS (COMMON CONFIGURATIONS)
+#================================================================================
+
+x-airflow-common: &airflow-common
+  build:
+    dockerfile: ./docker/airflow/Dockerfile
+  user: "${AIRFLOW_UID}:0"
+  environment:
+    AIRFLOW_UID: "${AIRFLOW_UID}"
+  env_file:
+    - ./.env
+    - ./docker/airflow/.env
+  volumes:
+    - ./data/airflow/dags:/opt/airflow/dags
+    - ./data/airflow/logs:/opt/airflow/logs
+    - ./data/airflow/downloads:/opt/airflow/downloads
+    - ./data/airflow/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./data/airflow/spark-jars:/opt/airflow/spark-jars
+  networks:
+    - docker_network
+
+x-airflow-depends-on: &airflow-depends-on
+  depends_on:
+    postgres-server:
+      condition: service_healthy
+    airflow-init-app:
+      condition: service_completed_successfully
+
+x-spark-common: &spark-common
+  build: ./docker/spark
+  image: spark-cluster:3.4.1
+  volumes:
+    - vol-spark-apps:/opt/spark-apps
+    - vol-spark-data:/opt/spark-data
+    - vol-spark-logs:/opt/spark/spark-events
+  env_file:
+    - ./.env
+    - ./docker/spark/.env
+  networks:
+    - docker_network
+
+#================================================================================
+# SERVICES
+#================================================================================
+
+services:
+
+  #==================================================
+  # Core Infrastructure & Storage
+  #==================================================
+
+  minio-server:
+    image: minio/minio:RELEASE.2023-02-22T18-23-45Z
+    container_name: minio-server
+    hostname: minio-server
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - ./.env
+      - ./docker/minio/.env
+    volumes:
+      - vol-minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - docker_network
+
+  postgres-server:
+    image: postgis/postgis:15-3.4
+    container_name: postgres-server
+    hostname: postgres-server
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 5
+    env_file:
+      - ./.env
+      - ./docker/postgresql/.env
+    volumes:
+      - vol-postgres:/var/lib/postgresql/data
+      - ./docker/postgresql/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/01-create-db.sh
+    networks:
+      - docker_network
+
+  mongodb-server:
+    image: mongo:6.0
+    container_name: mongodb-server
+    hostname: mongodb-server
+    ports:
+      - "27017:27017"
+    env_file:
+      - ./.env
+      - ./docker/mongodb/.env
+    volumes:
+      - vol-mongodb:/data
+    networks:
+      - docker_network
+
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: clickhouse-server
+    hostname: clickhouse-server
+    ports:
+      - "8123:8123"
+      - "9003:9000"
+    env_file:
+      - ./.env
+      - ./docker/clickhouse/.env
+    volumes:
+      - vol-clickhouse:/var/lib/clickhouse
+    networks:
+      - docker_network
+
+  neo4j-server:
+    image: neo4j:5.13
+    container_name: neo4j-server
+    hostname: neo4j-server
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    env_file:
+      - ./.env
+      - ./docker/neo4j/.env
+    volumes:
+      - vol-neo4j:/data
+    networks:
+      - docker_network
+
+  redis-server:
+    image: redis:7.2-alpine
+    container_name: redis-server
+    hostname: redis-server
+    command: redis-server --requirepass $${REDIS_PASSWORD}
+    env_file:
+      - ./.env
+      - ./docker/redis/.env
+    ports:
+      - "6379:6379"
+    volumes:
+      - vol-redis:/data
+    networks:
+      - docker_network
+
+  rabbitmq-server:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq-server
+    hostname: rabbitmq-server
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    env_file:
+      - ./.env
+      - ./docker/rabbitmq/.env
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    networks:
+      - docker_network
+
+  #==================================================
+  # Data Processing & Orchestration
+  #==================================================
+
+  airflow-web-app:
+    <<: [*airflow-common, *airflow-depends-on]
+    container_name: airflow-web-app
+    hostname: airflow-web-app
+    command: webserver
+    restart: always
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+
+  airflow-scheduler-app:
+    <<: [*airflow-common, *airflow-depends-on]
+    container_name: airflow-scheduler-app
+    hostname: airflow-scheduler-app
+    command: scheduler
+    restart: on-failure
+    ports:
+      - "8793:8793"
+
+  airflow-init-app:
+    build:
+      dockerfile: ./docker/airflow/Dockerfile
+    user: "${AIRFLOW_UID}:0"
+    environment:
+      AIRFLOW_UID: "${AIRFLOW_UID}"
+    env_file:
+      - ./.env
+      - ./docker/airflow/.env
+    volumes:
+      - ./data/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/downloads:/opt/airflow/downloads
+      - ./data/airflow/plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/airflow/spark-jars:/opt/airflow/spark-jars
+    networks:
+      - docker_network
+    container_name: airflow-init-app
+    hostname: airflow-init-app
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/downloads
+        chmod 777 -R /sources/downloads
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,downloads}
+        exec /entrypoint airflow version
+    depends_on:
+      postgres-server:
+        condition: service_healthy
+
+  spark-master-server:
+    <<: *spark-common
+    container_name: spark-master-server
+    hostname: spark-master-server
+    entrypoint: [ './entrypoint.sh', 'master' ]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+
+#  spark-history-server:
+#    <<: *spark-common
+#    container_name: spark-history-server
+#    hostname: spark-history-server
+#    entrypoint: [ './entrypoint.sh', 'history' ]
+#    depends_on:
+#      - spark-master-server
+#    ports:
+#      - '18080:18080'
+
+  spark-worker-a-server:
+    <<: *spark-common
+    container_name: spark-worker-a-server
+    hostname: spark-worker-a-server
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master-server
+    ports:
+      - '9093:8080' # Changed from 9091 to 9093 to resolve conflict
+      - '7000:7000'
+
+  spark-worker-b-server:
+    <<: *spark-common
+    container_name: spark-worker-b-server
+    hostname: spark-worker-b-server
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master-server
+    ports:
+      - '9092:8080'
+      - '7001:7000'
+
+  #==================================================
+  # AI & Machine Learning Platform
+  #==================================================
+
+  ollama-server:
+    image: ollama/ollama:0.1.33
+    container_name: ollama-server
+    hostname: ollama-server
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - vol-ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  mlflow-server:
+    image: python:3.9-slim
+    container_name: mlflow-server
+    hostname: mlflow-server
+    command: >
+      sh -c "pip install mlflow psycopg2-binary boto3 &&
+             mlflow server \\
+                --backend-store-uri postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres-server:$${POSTGRES_PORT}/$${POSTGRES_DB} \\
+                --default-artifact-root s3://mlflow/ \\
+                --host 0.0.0.0"
+    env_file:
+      - ./.env
+      - ./docker/mlflow/.env
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres-server
+      - minio-server
+    networks:
+      - docker_network
+
+  jupyter-app:
+    build:
+      context: ./docker/jupyterlab
+    container_name: jupyter-app
+    hostname: jupyter-app
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data/notebooks:/home/jovyan/work
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  chroma-vector-server:
+    image: chromadb/chroma:0.4.24
+    container_name: chroma-vector-server
+    hostname: chroma-vector-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - vol-chroma:/chroma/.chroma/index
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  #==================================================
+  # Observability & Monitoring
+  #==================================================
+
+  grafana-app:
+    image: grafana/grafana:10.2.2
+    container_name: grafana-app
+    hostname: grafana-app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - vol-grafana:/var/lib/grafana
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - prometheus-server
+      - loki-server
+      - tempo-server
+
+  otel-collector-server:
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    container_name: otel-collector-server
+    hostname: otel-collector-server
+    command: [--config=/etc/otel-collector-config.yml]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./docker/otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - prometheus-server
+      - loki-server
+      - tempo-server
+
+  prometheus-server:
+    image: prom/prometheus:v2.47.2
+    container_name: prometheus-server
+    hostname: prometheus-server
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - vol-prometheus:/prometheus
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  loki-server:
+    image: grafana/loki:2.9.2
+    container_name: loki-server
+    hostname: loki-server
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/loki-config.yaml
+      - vol-loki:/loki
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  tempo-server:
+    image: grafana/tempo:2.2.0
+    container_name: tempo-server
+    hostname: tempo-server
+    command: -config.file=/etc/tempo/tempo-config.yaml
+    volumes:
+      - ./docker/tempo/tempo-config.yml:/etc/tempo/tempo-config.yaml
+      - vol-tempo:/tmp/tempo
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  #==================================================
+  # Web UIs & Management Tools
+  #==================================================
+
+  portainer-app:
+    image: portainer/portainer-ce:2.19.4
+    container_name: portainer-app
+    hostname: portainer-app
+    ports:
+      - "9002:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - vol-portainer:/data
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  metabase-app:
+    image: metabase/metabase:v0.45.3
+    container_name: metabase-app
+    hostname: metabase-app
+    ports:
+      - "3001:3000"
+    env_file:
+      - ./.env
+      - ./docker/metabase/.env
+    volumes:
+      - vol-metabase:/metabase-data
+    depends_on:
+      - postgres-server
+    networks:
+      - docker_network
+
+  mongo-express-app:
+    image: mongo-express
+    container_name: mongo-express-app
+    hostname: mongo-express-app
+    ports:
+      - "8082:8081"
+    env_file:
+      - ./.env
+      - ./docker/mongodb/.env
+    depends_on:
+      - mongodb-server
+    networks:
+      - docker_network
+
+  smtp-server:
+    image: mailhog/mailhog:v1.0.1
+    container_name: smtp-server
+    hostname: smtp-server
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    volumes:
+      - vol-smtp:/home/mailhog
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
