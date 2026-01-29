@@ -1,0 +1,138 @@
+volumes:
+  vol-minio:
+  vol-postgres:
+  vol-mongodb:
+  vol-clickhouse:
+  vol-neo4j:
+  vol-redis:
+  vol-rabbitmq:
+
+networks:
+  docker_network:
+
+services:
+
+  #==================================================
+  # Core Infrastructure & Storage
+  #==================================================
+
+  minio-server:
+    image: minio/minio:RELEASE.2023-02-22T18-23-45Z
+    container_name: minio-server
+    hostname: minio-server
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - ./.env
+      - ./docker/minio/.env
+    volumes:
+      - vol-minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - docker_network
+    restart: always # Added restart policy
+
+  postgres-server:
+    image: postgis/postgis:15-3.4
+    container_name: postgres-server
+    hostname: postgres-server
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 5
+    env_file:
+      - ./.env
+      - ./docker/postgresql/.env
+    volumes:
+      - vol-postgres:/var/lib/postgresql/data
+      - ./docker/postgresql/create-multiple-postgresql-databases.sh:/docker-entrypoint-initdb.d/01-create-db.sh
+    networks:
+      - docker_network
+    restart: always # Added restart policy
+
+  mongodb-server:
+    image: mongo:6.0
+    container_name: mongodb-server
+    hostname: mongodb-server
+    ports:
+      - "27017:27017"
+    env_file:
+      - ./.env
+      - ./docker/mongodb/.env
+    volumes:
+      - vol-mongodb:/data
+    networks:
+      - docker_network
+
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: clickhouse-server
+    hostname: clickhouse-server
+    ports:
+      - "8123:8123"
+      - "9003:9000"
+    env_file:
+      - ./.env
+      - ./docker/clickhouse/.env
+    volumes:
+      - vol-clickhouse:/var/lib/clickhouse
+    networks:
+      - docker_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  neo4j-server:
+    image: neo4j:5.13
+    container_name: neo4j-server
+    hostname: neo4j-server
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    env_file:
+      - ./.env
+      - ./docker/neo4j/.env
+    volumes:
+      - vol-neo4j:/data
+    networks:
+      - docker_network
+
+  redis-server:
+    image: redis:7.2-alpine
+    container_name: redis-server
+    hostname: redis-server
+    command: redis-server --requirepass $${REDIS_PASSWORD}
+    env_file:
+      - ./.env
+      - ./docker/redis/.env
+    ports:
+      - "6379:6379"
+    volumes:
+      - vol-redis:/data
+    networks:
+      - docker_network
+
+  rabbitmq-server:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq-server
+    hostname: rabbitmq-server
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    env_file:
+      - ./.env
+      - ./docker/rabbitmq/.env
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    networks:
+      - docker_network

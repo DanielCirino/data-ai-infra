@@ -1,0 +1,90 @@
+volumes:
+  vol-ollama:
+  vol-open-webui:
+  vol-chroma:
+
+networks:
+  docker_network:
+
+services:
+
+  #==================================================
+  # AI & Machine Learning Platform
+  #==================================================
+
+  ollama-server:
+    image: ollama/ollama:0.1.33
+    container_name: ollama-server
+    hostname: ollama-server
+    # restart: always # Removed restart policy
+    ports:
+      - "11434:11434"
+    volumes:
+      - vol-ollama:/root/.ollama
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  open-webui-app:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui-app
+    hostname: open-webui-app
+    ports:
+      - "8080:8080" # Host:Container
+    volumes:
+      - vol-open-webui:/app/backend/data
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - ollama-server
+
+  mlflow-server:
+    image: python:3.9-slim
+    container_name: mlflow-server
+    hostname: mlflow-server
+    command: >
+      sh -c "pip install mlflow psycopg2-binary boto3 &&
+             mlflow server \\
+                --backend-store-uri postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres-server:$${POSTGRES_PORT}/$${POSTGRES_DB} \\
+                --default-artifact-root s3://mlflow/ \\
+                --host 0.0.0.0"
+    env_file:
+      - ./.env
+      - ./docker/mlflow/.env
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres-server
+      - minio-server
+    networks:
+      - docker_network
+
+  jupyter-app:
+    build:
+      context: ./docker/jupyterlab
+    container_name: jupyter-app
+    hostname: jupyter-app
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data/notebooks:/home/jovyan/work
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  chroma-vector-server:
+    image: chromadb/chroma:0.4.24
+    container_name: chroma-vector-server
+    hostname: chroma-vector-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - vol-chroma:/chroma/.chroma/index
+    env_file:
+      - ./.env
+    networks:
+      - docker_network

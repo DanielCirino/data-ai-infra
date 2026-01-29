@@ -21,16 +21,16 @@ Abaixo está a lista de todos os serviços disponíveis, agrupados por capacidad
 | | RabbitMQ (Messaging) | [http://localhost:15672](http://localhost:15672) | `guest` / `guest` |
 | **Data Processing** | Apache Airflow | [http://localhost:8081](http://localhost:8081) | `airflow` / `airflow` |
 | | Apache Spark Master | [http://localhost:9090](http://localhost:9090) | (N/A) |
-| | Apache Spark Worker A | [http://localhost:9093](http://localhost:9093) | (N/A) |
-| | Apache Spark Worker B | [http://localhost:9092](http://localhost:9092) | (N/A) |
+| | Apache Spark Worker | (N/A) | (N/A) |
 | **AI & ML** | Ollama (LLM Server) | [http://localhost:11434](http://localhost:11434) | (N/A) |
 | | Open WebUI | [http://localhost:8080](http://localhost:8080) | (setup no primeiro acesso) |
 | | MLflow | [http://localhost:5000](http://localhost:5000) | (N/A) |
 | | JupyterLab | [http://localhost:8888](http://localhost:8888) | (token no console) |
 | | ChromaDB (Vector DB) | [http://localhost:8000/api/v1](http://localhost:8000/api/v1) | (N/A) |
-| **Observability** | Grafana | [http://localhost:3000](http://localhost:3000) | `admin` / `admin` |
+| **Observability** | Grafana | [http://localhost:3002](http://localhost:3002) | `admin` / `admin` |
 | | Prometheus | [http://localhost:9091](http://localhost:9091) | (N/A) |
 | | OpenTelemetry Collector | `gRPC: 4317`, `HTTP: 4318` | (N/A) |
+| | SigNoz | [http://localhost:8083](http://localhost:8083) | (N/A) |
 | **Management & UI** | Portainer | [http://localhost:9002](http://localhost:9002) | (setup no primeiro acesso) |
 | | Metabase | [http://localhost:3001](http://localhost:3001) | (setup no primeiro acesso) |
 | | Mongo Express | [http://localhost:8082](http://localhost:8082) | `root` / `example` |
@@ -71,6 +71,8 @@ Abaixo está a lista de todos os serviços disponíveis, agrupados por capacidad
     ```bash
     docker-compose up -d
     ```
+    Alternativamente, para executar stacks específicas, consulte a seção "Executando Stacks Específicas" abaixo.
+    
     A primeira execução pode levar vários minutos, pois o Docker irá baixar todas as imagens e construir os serviços que possuem um `Dockerfile` (como JupyterLab e Airflow).
 
 5.  **Acesse os Serviços:**
@@ -82,15 +84,48 @@ Abaixo está a lista de todos os serviços disponíveis, agrupados por capacidad
     docker-compose down
     ```
 
+## Executando Stacks Específicas
+
+Para otimizar o uso de recursos, você pode executar apenas as stacks necessárias para seu projeto. Os arquivos de compose estão organizados por categoria:
+
+- **`docker-compose.databases.yml`**: Serviços de bancos de dados e armazenamento (MinIO, PostgreSQL, MongoDB, etc.).
+- **`docker-compose.processing.yml`**: Serviços de processamento de dados e orquestração (Airflow, Spark).
+- **`docker-compose.ai.yml`**: Serviços de IA e Machine Learning (Ollama, Open WebUI, MLflow, etc.).
+- **`docker-compose.observability.yml`**: Serviços de observabilidade e monitoramento (Grafana, Prometheus, OTEL, etc.).
+- **`docker-compose.management.yml`**: Ferramentas de gerenciamento e UIs (Portainer, Metabase, etc.).
+
+Para iniciar uma stack específica:
+```bash
+docker-compose -f docker-compose.databases.yml up -d
+```
+
+Para iniciar múltiplas stacks:
+```bash
+docker-compose -f docker-compose.databases.yml -f docker-compose.processing.yml up -d
+```
+
+Para parar uma stack específica:
+```bash
+docker-compose -f docker-compose.databases.yml down
+```
+
+**Nota:** Certifique-se de que as dependências entre stacks sejam atendidas (ex: serviços de processamento dependem de bancos de dados).
+
 ## Estrutura de Diretórios
 
 - **`docker-compose.yml`**: O arquivo principal que define e orquestra todos os serviços.
+- **`docker-compose.databases.yml`**: Arquivo de compose para serviços de bancos de dados e armazenamento.
+- **`docker-compose.processing.yml`**: Arquivo de compose para serviços de processamento de dados e orquestração.
+- **`docker-compose.ai.yml`**: Arquivo de compose para serviços de IA e Machine Learning.
+- **`docker-compose.observability.yml`**: Arquivo de compose para serviços de observabilidade e monitoramento.
+- **`docker-compose.management.yml`**: Arquivo de compose para ferramentas de gerenciamento e UIs.
 - **`docker/`**: Contém as configurações específicas de cada serviço.
   - **`[NOME_DO_SERVICO]/`**: Cada serviço configurável possui seu próprio diretório.
     - **`.env`**: Arquivo com as variáveis de ambiente (credenciais, hosts, etc.). **Este arquivo não deve ser commitado.**
     - **`.env.example`**: Um arquivo de modelo para o `.env`.
     - **`*.yml` ou `*.conf`**: Arquivos de configuração adicionais, se necessários.
     - **`Dockerfile`**: Se o serviço requer uma imagem customizada, ele estará aqui.
+  - **`signoz/`**: Configurações para o SigNoz (OTEL collector config).
 - **`data/`**: Diretórios mapeados como volumes para persistir dados ou fornecer arquivos aos serviços (ex: `notebooks/` para o Jupyter, `dags/` para o Airflow). Este diretório é criado na primeira execução ou pode ser criado manualmente.
 
 ## Políticas de Reinício (Restart Policies)

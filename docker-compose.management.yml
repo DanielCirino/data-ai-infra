@@ -1,0 +1,72 @@
+volumes:
+  vol-portainer:
+  vol-metabase:
+  vol-smtp:
+
+networks:
+  docker_network:
+
+services:
+
+  #==================================================
+  # Web UIs & Management Tools
+  #==================================================
+
+  portainer-app:
+    image: portainer/portainer-ce:2.19.4
+    container_name: portainer-app
+    hostname: portainer-app
+    ports:
+      - "9002:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - vol-portainer:/data
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    restart: always # Added restart policy
+
+  metabase-app:
+    image: metabase/metabase:v0.45.3
+    container_name: metabase-app
+    hostname: metabase-app
+    ports:
+      - "3001:3000"
+    env_file:
+      - ./.env
+      - ./docker/metabase/.env
+    volumes:
+      - vol-metabase:/metabase-data
+    depends_on:
+      - postgres-server
+    networks:
+      - docker_network
+
+  mongo-express-app:
+    image: mongo-express
+    container_name: mongo-express-app
+    hostname: mongo-express-app
+    ports:
+      - "8082:8081"
+    env_file:
+      - ./.env
+      - ./docker/mongodb/.env
+    depends_on:
+      - mongodb-server
+    networks:
+      - docker_network
+
+  smtp-server:
+    image: mailhog/mailhog:v1.0.1
+    container_name: smtp-server
+    hostname: smtp-server
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    volumes:
+      - vol-smtp:/home/mailhog
+    env_file:
+      - ./.env
+    networks:
+      - docker_network

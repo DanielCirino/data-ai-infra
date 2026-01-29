@@ -7,6 +7,11 @@ receivers:
 
 processors:
   batch:
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 2s
+    system:
+      hostname_sources: [os]
 
 exporters:
   prometheus:
@@ -17,17 +22,24 @@ exporters:
     endpoint: "tempo-server:4317"
     tls:
       insecure: true
+  clickhousetraces:
+    datasource: tcp://signoz-clickhouse:9000
+    docker_multi_node_cluster: false
+  clickhousemetricswrite:
+    endpoint: tcp://signoz-clickhouse:9000
+    resource_to_telemetry_conversion:
+      enabled: true
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/tempo]
+      exporters: [otlp/tempo, clickhousetraces]
     metrics:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [prometheus]
+      processors: [batch, resourcedetection]
+      exporters: [prometheus, clickhousemetricswrite]
     logs:
       receivers: [otlp]
       processors: [batch]

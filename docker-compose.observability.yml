@@ -1,0 +1,179 @@
+volumes:
+  vol-prometheus:
+  vol-loki:
+  vol-tempo:
+  vol-grafana:
+  vol-signoz-clickhouse:
+
+networks:
+  docker_network:
+
+services:
+  otel-collector-server:
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    container_name: otel-collector-server
+    hostname: otel-collector-server
+    command: [ --config=/etc/otel-collector-config.yml ]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./docker/otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - prometheus-server
+      - loki-server
+      - tempo-server
+
+  #==================================================
+  # Observability & Monitoring
+  #==================================================
+
+  grafana-app:
+    image: grafana/grafana:10.2.2
+    container_name: grafana-app
+    hostname: grafana-app
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - vol-grafana:/var/lib/grafana
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - prometheus-server
+      - loki-server
+      - tempo-server
+
+
+
+  prometheus-server:
+    image: prom/prometheus:v2.47.2
+    container_name: prometheus-server
+    hostname: prometheus-server
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - vol-prometheus:/prometheus
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  loki-server:
+    image: grafana/loki:2.9.2
+    container_name: loki-server
+    hostname: loki-server
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/loki-config.yaml
+      - vol-loki:/loki
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  tempo-server:
+    image: grafana/tempo:2.2.0
+    container_name: tempo-server
+    hostname: tempo-server
+    command: -config.file=/etc/tempo/tempo-config.yaml
+    volumes:
+      - ./docker/tempo/tempo-config.yml:/etc/tempo/tempo-config.yaml
+      - vol-tempo:/tmp/tempo
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+
+  #==================================================
+  # SigNoz Telemetry Stack
+  #==================================================
+
+  signoz-zookeeper:
+    image: signoz/zookeeper:3.7.1
+    container_name: signoz-zookeeper
+    restart: unless-stopped
+    ports:
+      - "2181:2181"
+    env_file:
+      - ./docker/signoz/.env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - docker_network
+
+  signoz-clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    container_name: signoz-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8124:8123"  # Adjusted to avoid conflict with existing ClickHouse
+      - "9004:9000"  # Adjusted to avoid conflict
+    env_file:
+      - ./docker/signoz/.env
+    volumes:
+      - vol-signoz-clickhouse:/var/lib/clickhouse
+    depends_on:
+      signoz-zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "0.0.0.0:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - docker_network
+
+  signoz-schema-migrator:
+    image: signoz/signoz-schema-migrator:v0.129.13
+    container_name: signoz-schema-migrator
+    command:
+      - sync
+      - --dsn=tcp://signoz-clickhouse:9000
+      - --up=
+    depends_on:
+      signoz-clickhouse:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - docker_network
+
+  signoz-server:
+    image: signoz/signoz:v0.110.0
+    container_name: signoz
+    restart: unless-stopped
+    ports:
+      - "8083:8080"  # Adjusted to avoid conflict with Open WebUI
+    env_file:
+      - ./docker/signoz/.env
+    volumes:
+      - ./data/signoz:/var/lib/signoz
+    depends_on:
+      signoz-clickhouse:
+        condition: service_healthy
+      signoz-schema-migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - docker_network

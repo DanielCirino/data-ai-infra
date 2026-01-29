@@ -59,8 +59,8 @@ RUN pip3 install -r requirements.txt
 
 ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
 ENV SPARK_HOME="/opt/spark"
-ENV SPARK_MASTER="spark://spark-master:7077"
-ENV SPARK_MASTER_HOST spark-master
+ENV SPARK_MASTER="spark://spark-master-server:7077"
+ENV SPARK_MASTER_HOST spark-master-server
 ENV SPARK_MASTER_PORT 7077
 ENV PYSPARK_PYTHON python3
 

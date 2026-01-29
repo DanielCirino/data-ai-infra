@@ -1,0 +1,146 @@
+volumes:
+  vol-airflow:
+  vol-spark-apps:
+  vol-spark-data:
+  vol-spark-logs:
+
+networks:
+  docker_network:
+
+#================================================================================
+# X-DEFINITIONS (COMMON CONFIGURATIONS)
+#================================================================================
+
+x-airflow-common: &airflow-common
+  build:
+    dockerfile: ./docker/airflow/Dockerfile
+  user: "${AIRFLOW_UID}:0"
+  environment:
+    AIRFLOW_UID: "${AIRFLOW_UID}"
+  env_file:
+    - ./.env
+    - ./docker/airflow/.env
+  volumes:
+    - ./data/airflow/dags:/opt/airflow/dags
+    - ./data/airflow/logs:/opt/airflow/logs
+    - ./data/airflow/downloads:/opt/airflow/downloads
+    - ./data/airflow/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./data/airflow/spark-jars:/opt/airflow/spark-jars
+  networks:
+    - docker_network
+
+x-airflow-depends-on: &airflow-depends-on
+  depends_on:
+    postgres-server:
+      condition: service_healthy
+    airflow-init-app:
+      condition: service_completed_successfully
+
+x-spark-common: &spark-common
+  build: ./docker/spark
+  image: spark-cluster:3.4.1
+  volumes:
+    - vol-spark-apps:/opt/spark-apps
+    - vol-spark-data:/opt/spark-data
+    - vol-spark-logs:/opt/spark/spark-events
+  env_file:
+    - ./.env
+    - ./docker/spark/.env
+  networks:
+    - docker_network
+
+services:
+
+  #==================================================
+  # Data Processing & Orchestration
+  #==================================================
+
+  airflow-web-app:
+    <<: [*airflow-common, *airflow-depends-on]
+    container_name: airflow-web-app
+    hostname: airflow-web-app
+    command: webserver
+    # restart: always # Removed restart policy
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+
+  airflow-scheduler-app:
+    <<: [*airflow-common, *airflow-depends-on]
+    container_name: airflow-scheduler-app
+    hostname: airflow-scheduler-app
+    command: scheduler
+    # restart: on-failure # Removed restart policy
+    ports:
+      - "8793:8793"
+
+  airflow-init-app:
+    build:
+      dockerfile: ./docker/airflow/Dockerfile
+    user: "${AIRFLOW_UID}:0"
+    environment:
+      AIRFLOW_UID: "${AIRFLOW_UID}"
+    env_file:
+      - ./.env
+      - ./docker/airflow/.env
+    volumes:
+      - ./data/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/downloads:/opt/airflow/downloads
+      - ./data/airflow/plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/airflow/spark-jars:/opt/airflow/spark-jars
+    networks:
+      - docker_network
+    container_name: airflow-init-app
+    hostname: airflow-init-app
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/downloads
+        chmod 777 -R /sources/downloads
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,downloads}
+        exec /entrypoint airflow version
+    depends_on:
+      postgres-server:
+        condition: service_healthy
+
+  spark-master-server:
+    <<: *spark-common
+    container_name: spark-master-server
+    hostname: spark-master-server
+    entrypoint: [ './entrypoint.sh', 'master' ]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080" ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+
+  spark-worker-server:
+    <<: *spark-common
+    entrypoint: ['./entrypoint.sh', 'worker']
+    depends_on:
+      - spark-master-server
+    networks:
+      - docker_network
+
+  spark-history-server:
+    <<: *spark-common
+    container_name: spark-history-server
+    hostname: spark-history-server
+    entrypoint: [ './entrypoint.sh', 'history' ]
+    depends_on:
+      - spark-master-server
+    ports:
+      - '18080:18080'
+    networks:
+      - docker_network

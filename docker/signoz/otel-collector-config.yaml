@@ -1,0 +1,44 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    send_batch_size: 1000
+    timeout: 10s
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 2s
+    system:
+      hostname_sources: [os]
+
+exporters:
+  clickhousetraces:
+    datasource: tcp://clickhouse-server:9000
+    docker_multi_node_cluster: false
+  clickhousemetricswrite:
+    endpoint: tcp://clickhouse-server:9000
+    resource_to_telemetry_conversion:
+      enabled: true
+  clickhouselogsexporter:
+    dsn: tcp://clickhouse-server:9000
+    docker_multi_node_cluster: false
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhousetraces]
+    metrics:
+      receivers: [otlp]
+      processors: [batch, resourcedetection]
+      exporters: [clickhousemetricswrite]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouselogsexporter]
