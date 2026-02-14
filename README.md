@@ -91,7 +91,8 @@ Para otimizar o uso de recursos, você pode executar apenas as stacks necessári
 - **`docker-compose.databases.yml`**: Serviços de bancos de dados e armazenamento (MinIO, PostgreSQL, MongoDB, etc.).
 - **`docker-compose.processing.yml`**: Serviços de processamento de dados e orquestração (Airflow, Spark).
 - **`docker-compose.ai.yml`**: Serviços de IA e Machine Learning (Ollama, Open WebUI, MLflow, etc.).
-- **`docker-compose.observability.yml`**: Serviços de observabilidade e monitoramento (Grafana, Prometheus, OTEL, etc.).
+- **`docker-compose.observability.yml`** / **`docker-compose.observability-lgtm.yml`**: Pilha LGTM (Grafana, Prometheus, Loki, Tempo, OTEL).
+- **`docker-compose.observability-signoz.yml`**: Pilha SigNoz (APM completo com ClickHouse).
 - **`docker-compose.management.yml`**: Ferramentas de gerenciamento e UIs (Portainer, Metabase, etc.).
 
 Para iniciar uma stack específica:
@@ -107,6 +108,15 @@ docker-compose -f docker-compose.databases.yml -f docker-compose.processing.yml 
 Para parar uma stack específica:
 ```bash
 docker-compose -f docker-compose.databases.yml down
+```
+
+**Observabilidade – duas pilhas:** Execute apenas uma por vez (compartilham portas OTEL 4317/4318):
+```bash
+# Pilha LGTM (Grafana): Prometheus + Loki + Tempo + Grafana
+docker-compose -f docker-compose.observability-lgtm.yml up -d
+
+# Pilha SigNoz: APM completo
+docker-compose -f docker-compose.observability-signoz.yml up -d
 ```
 
 **Nota:** Certifique-se de que as dependências entre stacks sejam atendidas (ex: serviços de processamento dependem de bancos de dados).

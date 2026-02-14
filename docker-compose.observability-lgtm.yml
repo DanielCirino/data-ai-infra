@@ -1,0 +1,108 @@
+# =============================================================================
+# LGTM Stack: Loki + Grafana + Tempo + Prometheus + OTEL Collector
+# =============================================================================
+# Stack de observabilidade baseada em Grafana (métricas, logs, traces).
+# Use quando quiser experimentar a abordagem LGTM.
+#
+# Uso: docker-compose -f docker-compose.observability-lgtm.yml up -d
+# OTEL: localhost:4317 (gRPC), localhost:4318 (HTTP)
+# Grafana: http://localhost:3002
+# Prometheus: http://localhost:9091
+# =============================================================================
+
+volumes:
+  vol-prometheus:
+  vol-loki:
+  vol-tempo:
+  vol-grafana:
+
+networks:
+  docker_network:
+
+services:
+  otel-collector-lgtm:
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    container_name: otel-collector-lgtm
+    hostname: otel-collector-lgtm
+    command: [ --config=/etc/otel-collector-config.yml ]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./docker/otel-collector/otel-collector-lgtm-config.yml:/etc/otel-collector-config.yml
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - prometheus-server
+      - loki-server
+      - tempo-server
+
+  grafana-app:
+    image: grafana/grafana:10.2.2
+    container_name: grafana-app
+    hostname: grafana-app
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - vol-grafana:/var/lib/grafana
+    environment:
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    env_file:
+      - ./.env
+    networks:
+      - docker_network
+    depends_on:
+      - prometheus-server
+      - loki-server
+      - tempo-server
+
+  prometheus-server:
+    image: prom/prometheus:v2.47.2
+    container_name: prometheus-server
+    hostname: prometheus-server
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - vol-prometheus:/prometheus
+    env_file:
+      - ./.env
+    networks:
+      docker_network:
+        aliases:
+          - prometheus
+
+  loki-server:
+    image: grafana/loki:2.9.2
+    container_name: loki-server
+    hostname: loki-server
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/loki-config.yaml
+      - vol-loki:/loki
+    env_file:
+      - ./.env
+    networks:
+      docker_network:
+        aliases:
+          - loki
+
+  tempo-server:
+    image: grafana/tempo:2.2.0
+    container_name: tempo-server
+    hostname: tempo-server
+    command: -config.file=/etc/tempo/tempo-config.yaml
+    volumes:
+      - ./docker/tempo/tempo-config.yml:/etc/tempo/tempo-config.yaml
+      - vol-tempo:/tmp/tempo
+    env_file:
+      - ./.env
+    networks:
+      docker_network:
+        aliases:
+          - tempo
